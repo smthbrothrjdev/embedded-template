@@ -1,6 +1,6 @@
-# Neovim DAP for STM32 (Our Setup) — CubeIDE-Equivalent Debugging Guide
+# Neovim DAP for STM32  — CubeIDE-Equivalent Debugging Guide
 
-This guide documents **our working Neovim + nvim-dap + cpptools (OpenDebugAD7) + OpenOCD + GDB** setup for **STM32F4 (Cortex-M4)**, using:
+This guide documents **a working Neovim + nvim-dap + cpptools (OpenDebugAD7) + OpenOCD + GDB** setup for **STM32F4 (Cortex-M4)**, using:
 
 - **Firmware ELF**: `${workspaceFolder}/build/target/firmware.elf`
 - **GDB server**: `127.0.0.1:3333` (OpenOCD)
@@ -70,11 +70,11 @@ Neovim can match STM32CubeIDE debugging capability by combining:
 - **OpenOCD**: GDB server talking to ST-Link and the MCU
 - **nvim-dap-ui + virtual-text**: IDE-like panes (variables, stack, breakpoints, watches, REPL) and inline values
 
-This guide is **specific to our implementation** (paths, commands, ports, keymaps, and the cpptools quirks we hit).
+This guide is **specific to my implementation** (paths, commands, ports, keymaps, and the cpptools quirks we hit).
 
 ---
 
-## 2. Our Implementation
+## 2. Implementation
 
 ### 2.1 What Runs Where
 
@@ -543,9 +543,9 @@ If DAP UI opens but looks empty or session ends instantly:
 
 ---
 
-### 25. Port 3333 already connected (the big gotcha)
+### 25. Port 3333 already connected 
 
-This was our root cause for “monitor not supported”, “broken pipe”, random disconnects.
+This is a common root cause for “monitor not supported”, “broken pipe”, random disconnects.
 
 Check:
 ```bash
@@ -597,8 +597,6 @@ Most “mystery failures” become obvious there:
 > Included here so the guide remains “specific to our implementation”.
 
 ```lua
--- ~/.config/nvim/lua/custom/plugins/dap-embedded.lua
---
 -- Key rule for cpptools (OpenDebugAD7):
 -- Do NOT run "continue" inside setup/postRemoteConnect commands.
 -- cpptools expects those commands to return MI ^done, but continue returns ^running.
