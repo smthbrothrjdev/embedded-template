@@ -1,3 +1,4 @@
+#TODO: Make this less coupled on hard implementation of archetecture, extract implementation for FBC
 BUILD_DIR := ../build/target
 
 # Toolchain
