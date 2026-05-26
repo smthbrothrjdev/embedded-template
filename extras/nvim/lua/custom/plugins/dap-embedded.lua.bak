@@ -1,0 +1,230 @@
+-- ~/.config/nvim/lua/custom/plugins/dap-embedded.lua
+--
+-- Key rule for cpptools (OpenDebugAD7):
+-- Do NOT run "continue" inside setup/postRemoteConnect commands.
+-- cpptools expects those commands to return MI ^done, but continue returns ^running.
+
+return {
+  {
+    'mfussenegger/nvim-dap',
+    dependencies = {
+      'rcarriga/nvim-dap-ui',
+      'nvim-neotest/nvim-nio',
+      'theHamsta/nvim-dap-virtual-text',
+    },
+    config = function()
+      local dap = require 'dap'
+      local dapui = require 'dapui'
+
+      local M = {}
+      M.elf_path = '${workspaceFolder}/build/target/firmware.elf'
+      M.gdb_host = '127.0.0.1'
+      M.gdb_port = 3333
+
+      local function notify(msg, level, title)
+        vim.notify(msg, level or vim.log.levels.INFO, { title = title or 'DAP' })
+      end
+
+      local function executable_or_nil(bin)
+        return (vim.fn.executable(bin) == 1) and bin or nil
+      end
+
+      local function pick_gdb()
+        return executable_or_nil 'arm-none-eabi-gdb' or executable_or_nil 'gdb-multiarch' or executable_or_nil 'gdb'
+      end
+
+      local function SC(cmd)
+        return { text = cmd }
+      end
+
+      local function make_target()
+        vim.cmd 'wall'
+        local out = vim.fn.system { 'make', '-C', 'target' }
+        if vim.v.shell_error ~= 0 then
+          notify(out, vim.log.levels.ERROR, 'FwBuild failed')
+          return false
+        end
+        notify('Build OK', vim.log.levels.INFO, 'FwBuild')
+        return true
+      end
+
+      local function is_openocd_listening()
+        local cmd = string.format([[ss -ltnH "sport = :%d" 2>/dev/null | awk '{print $4}']], M.gdb_port)
+        local out = vim.fn.system(cmd)
+        if vim.v.shell_error ~= 0 then
+          return true
+        end
+        return out:match('127%.0%.0%.1:' .. M.gdb_port) ~= nil
+      end
+
+      local function any_established_gdb_clients()
+        local cmd = string.format([[ss -tnHp state established "( sport = :%d )" 2>/dev/null]], M.gdb_port)
+        local out = vim.fn.system(cmd)
+        if vim.v.shell_error ~= 0 then
+          return false, ''
+        end
+        local has = out ~= nil and out:match '%S' ~= nil
+        return has, out
+      end
+
+      local function ensure_prereqs()
+        local gdb = pick_gdb()
+        if not gdb then
+          notify('No GDB found (arm-none-eabi-gdb / gdb-multiarch / gdb)', vim.log.levels.ERROR, 'DAP prereq')
+          return false
+        end
+
+        local open_debug_ad7 = vim.fn.stdpath 'data' .. '/mason/bin/OpenDebugAD7'
+        if vim.fn.executable(open_debug_ad7) ~= 1 then
+          notify('OpenDebugAD7 missing. Install via :Mason (package: cpptools).', vim.log.levels.ERROR, 'DAP prereq')
+          return false
+        end
+
+        if not is_openocd_listening() then
+          notify(string.format('OpenOCD not listening on %s:%d. Start OpenOCD first.', M.gdb_host, M.gdb_port), vim.log.levels.ERROR, 'DAP prereq')
+          return false
+        end
+
+        local has_estab, estab_out = any_established_gdb_clients()
+        if has_estab then
+          notify(
+            'Port 3333 already has an established client connection.\n' .. 'Close the other client and try again.\n\n' .. estab_out,
+            vim.log.levels.ERROR,
+            'DAP prereq'
+          )
+          return false
+        end
+
+        return true
+      end
+
+      -- Adapter (cpptools)
+      local open_debug_ad7 = vim.fn.stdpath 'data' .. '/mason/bin/OpenDebugAD7'
+      dap.adapters.cppdbg = {
+        id = 'cppdbg',
+        type = 'executable',
+        command = open_debug_ad7,
+      }
+
+      local gdb_path = pick_gdb() or 'gdb-multiarch'
+      local server_addr = string.format('%s:%d', M.gdb_host, M.gdb_port)
+
+      local common = {
+        type = 'cppdbg',
+        request = 'launch',
+        cwd = '${workspaceFolder}',
+        program = M.elf_path,
+
+        MIMode = 'gdb',
+        miDebuggerPath = gdb_path,
+        miDebuggerServerAddress = server_addr,
+
+        targetArchitecture = 'arm',
+
+        runInTerminal = false,
+        externalConsole = false,
+
+        -- IMPORTANT: stop so cpptools can finish launching cleanly.
+        -- You press <F5> to run (CubeIDE-style).
+        stopAtEntry = true,
+
+        setupCommands = {
+          SC 'set confirm off',
+          SC 'set pagination off',
+          SC 'set endian little',
+          SC 'set architecture arm',
+        },
+      }
+
+      local flash_and_debug = vim.tbl_deep_extend('force', common, {
+        name = 'STM32 (OpenOCD) - Flash + Debug',
+
+        postRemoteConnectCommands = {
+          SC 'monitor reset halt',
+          SC 'load',
+          SC 'monitor reset init',
+          SC 'monitor halt',
+          SC 'tbreak main',
+          -- DO NOT "continue" here (cpptools treats ^running as an error)
+        },
+      })
+
+      local attach_only = vim.tbl_deep_extend('force', common, {
+        name = 'STM32 (OpenOCD) - Attach Only (No Flash)',
+        postRemoteConnectCommands = {
+          SC 'monitor reset halt',
+        },
+      })
+
+      dap.configurations.c = { flash_and_debug, attach_only }
+      dap.configurations.cpp = dap.configurations.c
+
+      -- UI
+      dapui.setup {}
+      require('nvim-dap-virtual-text').setup {}
+
+      dap.listeners.after.event_initialized['dapui_autoopen'] = function()
+        dapui.open()
+      end
+      dap.listeners.before.event_terminated['dapui_autoclose'] = function()
+        dapui.close()
+      end
+      dap.listeners.before.event_exited['dapui_autoclose'] = function()
+        dapui.close()
+      end
+
+      -- Keymaps
+      local map = vim.keymap.set
+      map('n', '<F5>', dap.continue, { desc = 'DAP: Continue' })
+      map('n', '<F9>', dap.toggle_breakpoint, { desc = 'DAP: Toggle Breakpoint' })
+      map('n', '<F10>', dap.step_over, { desc = 'DAP: Step Over' })
+      map('n', '<F11>', dap.step_into, { desc = 'DAP: Step Into' })
+      map('n', '<S-F11>', dap.step_out, { desc = 'DAP: Step Out' })
+
+      map('n', '<leader>du', dapui.toggle, { desc = 'DAP UI: Toggle' })
+      map('n', '<leader>dr', dap.repl.toggle, { desc = 'DAP: REPL Toggle' })
+      map({ 'n', 'v' }, '<leader>de', function()
+        dapui.eval()
+      end, { desc = 'DAP UI: Eval' })
+
+      -- Commands
+      vim.api.nvim_create_user_command('FwBuild', function()
+        make_target()
+      end, {})
+
+      vim.api.nvim_create_user_command('FwDebug', function()
+        if not ensure_prereqs() then
+          return
+        end
+        if not make_target() then
+          return
+        end
+        dap.run(dap.configurations.c[1])
+      end, {})
+
+      vim.api.nvim_create_user_command('FwAttach', function()
+        if not ensure_prereqs() then
+          return
+        end
+        dap.run(dap.configurations.c[2])
+      end, {})
+
+      vim.api.nvim_create_user_command('FwDapInfo', function()
+        notify(
+          ('miDebuggerPath: %s\nOpenDebugAD7: %s\nELF: %s\nmiDebuggerServerAddress: %s\nstopAtEntry: true'):format(
+            gdb_path,
+            open_debug_ad7,
+            M.elf_path,
+            server_addr
+          ),
+          vim.log.levels.INFO,
+          'FwDapInfo'
+        )
+      end, {})
+
+      map('n', '<leader>mb', '<cmd>FwBuild<CR>', { desc = 'FW: Build' })
+      map('n', '<leader>md', '<cmd>FwDebug<CR>', { desc = 'FW: Debug' })
+      map('n', '<leader>ma', '<cmd>FwAttach<CR>', { desc = 'FW: Attach' })
+    end,
+  },
+}

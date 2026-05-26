@@ -346,6 +346,50 @@ If it stops at `main`, debugging is fully functional.
 
 ---
 
+## 5.1 Neovim DAP Frontend (Optional, IDE-like)
+
+The terminal-first workflow above is the **source of truth**.  
+On top of that, we also support an IDE-like frontend inside Neovim using `nvim-dap` + `nvim-dap-ui` + cpptools (`OpenDebugAD7`).
+
+### Target (STM32) Neovim commands
+
+Inside Neovim (project root):
+
+| What you want | Command | Default key |
+|---|---|---|
+| Build firmware | `:FwBuild` | `<leader>mb` |
+| Flash + debug (OpenOCD must be running) | `:FwDebug` | `<leader>md` |
+| Attach only (no flash) | `:FwAttach` | `<leader>ma` |
+| Quick Reference Guide buffer | `:QRG` | (command) |
+| Full firmware disassembly (source+asm) | `:FwAsm` | `<leader>sA` |
+| Function disassembly (symbol under cursor) | `:FwAsmFunc` | `<leader>sa` |
+
+**Debug flow (Neovim):**
+
+1. Start OpenOCD in a terminal:
+   ```bash
+   openocd -f interface/stlink.cfg -f target/stm32f4x.cfg
+   ```
+2. In Neovim: run `:FwDebug`
+3. When the DAP session starts (halted), press:
+   - `F5` to run (resume)
+   - `F9` to toggle breakpoints
+   - `F10/F11/Shift+F11` to step
+
+**Assembly view (static):**
+
+- `<leader>sA` opens full firmware disassembly
+- `<leader>sa` opens disassembly for function under cursor
+
+In the assembly split:
+- `q` closes
+- `R` refreshes (after rebuild)
+
+For a full Neovim usage guide, see `NVIM_USAGE_GUIDE.md`.
+
+
+---
+
 ## 6️⃣ GDB Guide (IDE Parity + Real Embedded Workflows)
 
 This section is meant to replace the “IDE panels” you’re used to (CubeIDE):

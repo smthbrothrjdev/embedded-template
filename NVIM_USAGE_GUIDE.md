@@ -181,6 +181,9 @@ Before launching we verify:
 | `<leader>mb` | Firmware build | `:FwBuild` |
 | `<leader>md` | Firmware flash + debug | `:FwDebug` |
 | `<leader>ma` | Firmware attach-only | `:FwAttach` |
+| `<leader>sa` | Firmware Assembly (function under cursor) | `:FwAsmFunc` |
+| `<leader>sA` | Firmware Assembly (full ELF) | `:FwAsm` |
+
 
 > **Important:** We intentionally do **not** “auto-run” from setup/postRemoteConnect.  
 > Press **F5** after session starts.
@@ -193,6 +196,10 @@ Before launching we verify:
 | `:FwDebug` | prereq checks → build → start **Flash + Debug** config |
 | `:FwAttach` | prereq checks → start **Attach Only** config |
 | `:FwDapInfo` | prints current adapter paths / ELF / server addr |
+| `:FwAsm` | Open full firmware disassembly (source + asm via objdump) |
+| `:FwAsmFunc [symbol]` | Open disassembly for function under cursor (or explicit symbol) |
+| `:QRG` | Open Quick Reference Guide buffer inside Neovim |
+
 
 ### 4.3 Common DAP Commands (no key by default)
 
@@ -225,7 +232,91 @@ These exist in `nvim-dap` but may not be mapped:
 
 ---
 
+### 4.5 Assembly Views (Static)
+
+Our setup includes **static disassembly inside Neovim** using `arm-none-eabi-objdump` against the built ELF.
+
+- Full firmware disassembly: `:FwAsm` or `<leader>sA`
+- Function under cursor: `:FwAsmFunc` or `<leader>sa`
+  - You can also run `:FwAsmFunc main` (or any symbol) explicitly.
+
+Inside the disassembly split:
+
+- `q` — close
+- `R` — refresh (after rebuilding)
+
+> Note: this is **static** disassembly. For **live** disassembly at `$pc`, use the DAP REPL with `x/10i $pc`.
+
+### 4.6 Quick Reference Buffer
+
+Run `:QRG` any time to open a scratch markdown buffer with the **high-signal cheat sheet** for host + target workflows, keybinds, and assembly commands.
+
+
 ## 5. Workflows (26 total)
+
+### 5.1 Host Workflows (native Linux)
+
+These workflows are for **host/** builds (native Linux binaries). They are intentionally separate from target hardware work.
+
+#### H01 — Switch clangd to Host mode
+```bash
+make -C host compdb
+make switch-host
+```
+
+Then in Neovim:
+```vim
+:LspRestart
+```
+
+#### H02 — Build + run host binary
+```bash
+make -C host
+./build/host/host_app
+```
+
+#### H03 — Debug host binary (terminal-first)
+```bash
+gdb ./build/host/host_app
+```
+
+Common GDB commands:
+```gdb
+break main
+run
+next
+step
+finish
+bt
+info locals
+```
+
+#### H04 — Host assembly (terminal or Neovim)
+Terminal:
+```bash
+objdump -dS -l --demangle --wide ./build/host/host_app | less
+```
+
+Neovim (quick one-off):
+```vim
+:vnew | r !objdump -dS -l --demangle --wide ./build/host/host_app
+:set filetype=asm
+```
+
+#### H05 — Switch clangd back to Target mode
+```bash
+make -C target compdb
+make switch-target
+```
+
+Then in Neovim:
+```vim
+:LspRestart
+```
+
+### 5.2 Target Workflows (STM32/OpenOCD)
+
+Everything below assumes **target/** firmware, real hardware, and OpenOCD on `127.0.0.1:3333`.
 
 ### 01. OpenOCD Start/Stop
 
